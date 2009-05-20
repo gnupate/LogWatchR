@@ -4,7 +4,9 @@ require 'logwatchr'
 
 watcher = WatchR.new('hosts', 'good_patterns.yml', 'bad_patterns.yml')
 
-$stdin.each_line do |line|
-  watcher.analyze_entry(line)
+while 1
+  $stdin.each_line do |line|
+    watcher.analyze_entry(line)
+  end
+  sleep 1
 end
-
