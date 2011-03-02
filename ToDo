@@ -1,0 +1,41 @@
+Here's a list of logwatcher projects that could be taken on by
+anyone interested.  If you're going to work on something, let
+me (Pat) know and I'll mark it in this file.  I'm happy to help
+out while you work on things.  I'd like to do a code review
+before you check in changes.
+
+Easy stuff:
+* add a notifier for Russel's alert/notification system
+* add a good_patterns counter
+* add specific patterns counter
+* build init.d start/stop scripts (after daemonified)
+* add tests for Pattern class (not really needed since it's
+  so simple, but it would be nice)
+
+
+Not too hard stuff:
+* daemonify logwatcher (http://daemons.rubyforge.org/)
+* reread catalogs on the fly
+* add a graphite notifier (after counters are in place)
+* refactor based on reek -- need to write up individual tasks
+
+Harder stuff:
+* build an unknown_log analysis tool (Is Russel doing this?)
+* add notifier tests (need to mock smtp for this)
+* make multithreaded (to support timed graphite notifier
+  and better clean-up)
+
+-------------
+
+Done
+* either add discovered hosts to hosts file or stop worrying about the
+  hosts file.
+* fix alert thresholds
+* build a DB weeder to clean out old events (after moved to SQLite
+  model) 
+* add unit/functional tests
+* pull event memory out of object space and put it into a SQLite DB
+
+
+Skipping
+* add a host_not_seen_recently check (after moved to SQLite)
