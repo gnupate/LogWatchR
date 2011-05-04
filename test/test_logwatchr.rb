@@ -1,6 +1,9 @@
+#!/usr/bin/ruby
 #
 # This code is licensed under the GPL v2, please see
 # the file COPYING for more details
+
+$LOAD_PATH << "../lib"
 
 require 'test/unit'
 require 'logwatchr'
@@ -249,8 +252,8 @@ class TestWatchR < Test::Unit::TestCase
                 )
     @alert.db = @db
     @lw = WatchR.new(@db, 
-                     "good_patterns.yml",  
-                     "test_bad_patterns.yml")
+                     "../conf/good_patterns.yml",  
+                     "../conf/test_bad_patterns.yml")
   end
 
   def teardown
