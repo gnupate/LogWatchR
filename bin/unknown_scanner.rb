@@ -10,7 +10,7 @@ entries = {}
 entries.default = 0
 count = 0
 
-File.open("unknown_log",'r').each_line do |line|
+ARGF.each do |line|
   entries[LogEntry.new(line).anonymize] += 1
   count += 1
 end
