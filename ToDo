@@ -5,37 +5,59 @@ out while you work on things.  I'd like to do a code review
 before you check in changes.
 
 Easy stuff:
-* add a notifier for Russel's alert/notification system
-* add a good_patterns counter
-* add specific patterns counter
-* build init.d start/stop scripts (after daemonified)
-* add tests for Pattern class (not really needed since it's
-  so simple, but it would be nice)
-
+* add a good_patterns counter (2.4)
+* add specific patterns counter (2.4)
+* version catalogs (2.4)
+* add a notifier for Russel's alert/notification system (Unplanned)
+* build logfile handling tools (Unplanned)
 
 Not too hard stuff:
-* daemonify logwatcher (http://daemons.rubyforge.org/)
-* reread catalogs on the fly
-* add a graphite notifier (after counters are in place)
-* refactor based on reek -- need to write up individual tasks
+* extract a Notifier Class w/tests
+* extract DB handling to a class
+* version DB schema (2.4)
+* add a graphite notifier (2.4)
 
 Harder stuff:
-* build an unknown_log analysis tool (Is Russel doing this?)
-* add notifier tests (need to mock smtp for this)
-* make multithreaded (to support timed graphite notifier
-  and better clean-up)
+* add 'on the fly' tuning into the application. (After pattern counters)
+
+Things to think about:
+* make multithreaded (Unplanned)
+* move to families of alerts? (Unplanned)
+* make the patterns catalogs runnable ruby instead of YAML (can add
+  hook methods to a pattern (e.g., to log a good pattern, or to check a
+  dependency)
+* create a separate DB (or table in a DB) for each kind of event
+
 
 -------------
 
 Done
-* either add discovered hosts to hosts file or stop worrying about the
-  hosts file.
+* write unknown_log scanner
+* add a shell script to build rpms
 * fix alert thresholds
 * build a DB weeder to clean out old events (after moved to SQLite
   model) 
 * add unit/functional tests
 * pull event memory out of object space and put it into a SQLite DB
+* refactor based on reek
+* add tests for Pattern class (not really needed since it's
+  so simple, but it would be nice)
+* build a catalog profiling tool
+* rotated logs
+* reread catalogs on the fly
+* extract an event methods to Pattern Class
+* daemonify logwatcher
+* clean up SQLException error when the db table doesn't exist
+* add testing switch to cut out the outer loop of the
+  log reader
+* added switches to allow cmdline override good and bad catalogs &
+  log source
+* make the mail notifier more useful (short subject line, 
+  more info in body)
+* build init.d start/stop scripts (2.2 - Spencer)
+* build .spec file to package as an rpm (2.2 - Spencer)
 
 
 Skipping
 * add a host_not_seen_recently check (after moved to SQLite)
+* stop worrying about the hosts file.

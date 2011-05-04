@@ -1,173 +1,175 @@
+#
+# This code is licensed under the GPL v2, please see
+# the file COPYING for more details
+
 require 'sqlite3'
 require 'date'
 require 'yaml'
 require 'net/smtp'
+require 'logwatchr/pattern'
 
-db = SQLite3::Database.new( "logwatcher.db" )
-
-
-class Pattern
-  attr_accessor :name, :pattern, 
-  :notification_type, 
-  :notification_msg, :notification_target, :max_age,
-  :dependancy_num, 
-  :notification_hush_secs, 
-  :dependancy_name, 
-  :dependancy_max_age
+module LogWatcher
+  LibMajor = 2
+  LibMinor = 2
+  LibRevision = 1
+  
+  LibVersion = "#{LibMajor}.#{LibMinor}.#{LibRevision}"
+  ShortLibVersion = "#{LibMajor}.#{LibMinor}"
 end
 
+# the LogEntry class holds individual lines from the log
+class LogEntry
+  def initialize(line)
+    @line = line
+  end
+
+  def anonymize
+    @line.split()[3..-1].join(" ").gsub(/\d+/, 'D')
+  end
+
+end
+
+
+# the WatchR class is where everything happens; log entries are
+# analyzed, read, and/or anonymyzed, the catalogs are read (or
+# reread); notification is done (this should be extracted); and the DB
+# handles are managed (this should be extracted)
 class WatchR
+  attr_reader :time_fmt
+
+  def load_yaml(catalog)
+    open(catalog) { |file| YAML.load(file) }
+  end
+
+  def reload(good, bad)
+    @good_patterns = load_yaml(good)
+    @bad_patterns = load_yaml(bad)
+    @bad_patterns.each do |pattern|
+      pattern.db = @db
+    end
+
+    @max_hush = @bad_patterns.max { |first,second|
+      ( first.notification_hush_secs or 0 ) <=>
+      ( second.notification_hush_secs or 0 )
+    }.notification_hush_secs
+
+    @max_alert_age = @bad_patterns.max { |first,second|
+      ( first.max_age or 0 ) <=> ( second.max_age or 0 )
+    }.max_age
+  end
 
   def initialize(db, good, bad)
     @db = db
-    @time_fmt = "%Y-%m-%d %H:%M:%S"
+    @time_fmt = "%Y-%b-%e %H:%M:%S"
     @max_alert_age = 0
-    time = Time.now.tv_sec
+    @max_hush = 86400
 
-    @good_patterns = open(good) { |f| YAML.load(f)}
-    @bad_patterns = open(bad) { |f| YAML.load(f) }
-    @bad_patterns.each do |pattern|
-      if @max_alert_age < pattern.max_age
-        @max_alert_age = pattern.max_age
-      end
-    end
+    self.reload(good, bad)
   end
 
+  def read_line(logentry)
+    log_array = logentry.split
+    # fixme this needs to be handled more cleanly
+    if log_array[4] =~ /ace00\d/
+      log_array.delete_at(3)
+    end 
+    @host = log_array[3]
+    @log_msg = log_array[3..-1].join(" ")
+    @time = Time.now.strftime("%Y") + "-" +
+      log_array[0..1].join("-") + " " + log_array[2]
+    return log_array.join(' ')
+  end
+
+  def bad_pattern?(logentry, alert)
+    # can't relocate this into Pattern until
+    # notifiers is handled.
+    notified = 0
+    if alert.is_event?(logentry)
+      if alert.notify?(@host, @time)
+        notify(@log_msg,
+               alert)
+        notified = 1
+      end
+      update_db(alert, notified)
+      return true
+    end
+  end
 
   def analyze_entry(logentry)
-    clear_db(@max_alert_age)
-    log_array = logentry.split
-    @host = log_array[3]
-    @log_msg = log_array[4..-1].join(" ")
-    @time = Time.now.strftime("%Y") + "-" +
-      log_array[0..1].join("-") + " " +
-      log_array[2]
+    read_line(logentry)
 
     @good_patterns.each do |alert|
-      if is_event?(logentry, alert.pattern)
-        return true
-      end
-    end
+      return true if alert.good_pattern?(logentry) 
+     end
 
     @bad_patterns.each do |alert|
-      if is_event?(logentry, alert.pattern)
-        if event_notify?(@host, alert, @time)
-          notify(@log_msg,
-                 alert.notification_target,
-                 alert.notification_type)
-          notified = 1
-        else
-          notified = 0
-        end
-        update_db(@host, @time, alert.name, notified)
-        return false
+      clear_db
+      return false if bad_pattern?(logentry, alert)
+    end
+
+    notify_log("#{@time} #{@log_msg}",
+               # fixme this shouldn't be hard coded
+               "/var/logwatcher/unknown_log")
+
+    return false
+  end
+
+  def count_entry(logentry, entries)
+    [@good_patterns, @bad_patterns].flatten.each do |alert|
+      if alert.is_event?(logentry)
+        entries[alert.name] += 1
+        return 0
       end
     end
-
-    notify_log("#{@time} unknown pattern:  #{@host} #{@log_msg}", 
-               "unknown_log")
-
-    false
+    entries[:unknown] += 1
   end
 
-  def is_event?(log_msg, pattern)
-    log_msg =~ pattern
-  end
-
-  def event_notify?(host, alert, time)
-    if event_threshold_reached?(host, alert, time) &&
-        !(event_notified_recently?(host, 
-                                   alert, time)) &&
-        event_dependencies_met?(host, alert, time)
-      return true
-    end
-    false
-  end
-
-  def event_threshold_reached?(host, pattern, time)
-    old_time = (Time.new - 
-                pattern.max_age).strftime(@time_fmt)
-    if ( @db.execute("select * from event where
-                      host = '#{host}' and
-                      alert = '#{pattern.name}'
-                      and time > '#{old_time}'").length >=
-         pattern.dependancy_num - 1 )
-      true
-    else
-      false
-    end
-  end
-
-  def event_notified_recently?(host, alert, time)
-    if ( @db.execute("select * from event where 
-                      host = '#{host}' and 
-                      alert = '#{alert.name}' and
-                      alerted = 1").length >= 1)
-      true
-    else
-      false
-    end
-    
-  end
-
-  def event_dependencies_met?(host, alert, time)
-    unless (alert.dependancy_name &&
-            alert.dependancy_max_age)
-      return true
-    end
-            
-    name = alert.dependancy_name
-    old_time = (Time.now - 
-                alert.dependancy_max_age).strftime(@time_fmt)
-    if ( @db.execute("select * from event where
-                      host = '#{host}' and
-                      alert = '#{name}' and
-                      time > '#{old_time}'").length > 0 )
-      true
-    else
-      false
-    end
-  end
-
-
-
-  def update_db(host, time, alert, alerted)
-    @db.execute("insert into event 
+  def update_db(alert, alerted)
+    # we should extract the db stuff to a separate DB Class.  Until
+    # then, this should be treated as a private method
+    @db.transaction do |db|
+      db.execute("insert into event 
                  (host, time, alert, alerted) 
-                 values ('#{host}', '#{time}',
-                 '#{alert}', #{alerted})") 
+                 values ('#{@host}', '#{@time}',
+                 '#{alert.name}', #{alerted})") 
+    end
   end
 
-  def clear_db(seconds)
-    old_time = (Time.now - seconds).strftime(@time_fmt)
-    @db.execute("delete from event where time < '#{old_time}'")
+  def clear_db()
+    # we should extract the db stuff to a separate DB Class.
+    time = Time.now
+    old_time = (time - @max_alert_age).strftime(@time_fmt).gsub(/- /,'-')
+    hush_time = (time - @max_hush).strftime(@time_fmt).gsub(/- /,'-')
+    @db.execute("delete from event where time < '#{old_time}' and alerted = 0")
+    @db.execute("delete from event where time < '#{hush_time}' and alerted = 1")
   end
 
-    def notify(log_msg, alert_target, alert_type)
-    if alert_type == :log
-      notify_log(log_msg, alert_target)
-    elsif alert_type == :mail
-      notify_mail(log_msg, alert_target)
+  def notify(log_msg, alert)
+    if alert.notification_type == :log
+      notify_log(log_msg, alert.notification_target)
+    elsif alert.notification_type == :mail
+      notify_mail(log_msg, alert)
     end
   end
 
   def notify_log(msg, target)
-    open(target, 'a') {|f| f.puts msg }
+    open(target, 'a') {|file| file.puts msg }
   end
 
-  def notify_mail(msg, target)
+  def notify_mail(msg, alert)
     msgstr= <<EOM
 From: logwatcher@usys.org
-To: #{target}
-Subject: #{msg}
+To: #{alert.notification_target}
+Subject: #{@time} #{@host} #{alert.name}
 
 #{msg}
 EOM
     Net::SMTP.start('localhost', 25) do |smtp|
-      smtp.send_message(msgstr, 'logwatcher@usys.org', target)
+      smtp.send_message(msgstr, 'logwatcher@usys.org',
+                        alert.notification_target)
     end
-    notify_log("#{@time} #{msg}", "emailed_log")
+    # fixme - this shouldn't be a hardcoded log location
+    notify_log("#{@time} #{msg}", "/var/logwatcher/emailed_log")
   end
-
 
 end
