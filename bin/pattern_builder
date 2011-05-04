@@ -1,0 +1,66 @@
+#!/usr/bin/ruby
+
+# simple script to build patterns.  I'm putting this into svn, but
+# not into the build since it should be used on your home machine
+# and in the svn tree, not on a live server
+
+# add the load path to run logwatcher out of /opt/sysadmin/bin and
+# /opt/sysadmin/lib
+$LOAD_PATH << "/opt/sysadmin/lib"
+require 'yaml'
+require 'logwatchr/pattern'
+
+bad_pattern = false
+print "Will this be a bad pattern: [y/N]"
+pattern_type = gets.downcase
+if pattern_type =~ /^y/
+  bad_pattern = true
+end
+
+new_pat = Pattern.new
+
+# every pattern needs these
+name = ""
+while true do
+  print "Enter the name of the pattern: "
+  name = gets.chomp
+  if ( name.split.length != 1 )
+    puts "invalid name, try again"
+  elsif ( `grep "name: :#{name}" good_patterns.yml` != "" ||
+          `grep "name: :#{name}" bad_patterns.yml` != "")
+    puts "name matches an existing pattern, try again"
+  else
+    new_pat.name = name.to_sym
+    break
+  end
+end
+
+print "Enter the regexp this pattern matches: "
+pattern = gets.chomp
+new_pat.pattern = Regexp.new(pattern)
+
+if bad_pattern
+  #only bad patterns need these
+  print "Enter the notification message: "
+  new_pat.notification_msg = gets.chomp
+  print "Enter the target of the notification: "
+  new_pat.notification_target = gets.chomp
+  while true
+    print "enter mail or log for notification type: "
+    type = gets.chomp
+    if type =~ /(mail|log)/
+      new_pat.notification_type = type.to_sym
+      break
+    else
+      puts "Invalid notification type, try again"
+    end
+  end
+  print "enter the number of alerts needed to be an event: "
+  new_pat.dependancy_num = gets.to_i
+  print "enter the number of seconds to hold alerts in the db: "
+  new_pat.max_age = gets.to_i
+  print "enter the number of seconds to hush new notifications after a notification goes out: "
+  new_pat.notification_hush_secs = gets.to_i
+end
+
+puts new_pat.to_catalog
