@@ -1,0 +1,26 @@
+#!/bin/bash
+
+hosts="your hosts go here"
+domain="example.com"
+retval=0
+
+for i in `echo $hosts`; do
+   echo -n "copying to $i -> "
+   scp -q *.yml root@${i}.${domain}:/var/logwatcher/
+   if [ $? -eq 0 ] ; then
+       echo "done"
+   else
+       echo "failed"
+       retval=1 
+   fi
+   echo -n "HUPping logwatcher on $i -> "
+   ssh root@${i}.${domain} "if ( /etc/init.d/logwatcher status > /dev/null ) ; then /etc/init.d/logwatcher reload; fi"
+   if [ $? -eq 0 ] ; then
+       echo "done"
+   else
+       echo "failed"
+       retval=1 
+   fi
+done
+
+exit $retval
